@@ -22,7 +22,7 @@ import json
 from collections import defaultdict
 from functools import cached_property
 from typing import List, Optional
-
+from apps.meta.utils.format import preprocess_data
 from bk_resource import CacheResource, api, resource
 from bk_resource.base import Empty
 from bk_resource.exceptions import APIRequestError
@@ -828,7 +828,7 @@ class GetEventFieldsConfig(StrategyV2Base):
                 field_name=field.field_name,
                 display_name=str(field.description),
                 description="",
-                example=getattr(risk, field.field_name, "") if risk and has_permission else "",
+                example=preprocess_data(getattr(risk, field.field_name, "")) if risk and has_permission else "",
             )
             for field in [
                 EventMappingFields.RAW_EVENT_ID,
@@ -869,7 +869,7 @@ class GetEventFieldsConfig(StrategyV2Base):
                 if key not in field_dict:
                     field_dict[key] = {"display_name": key, "example": "", "description": ""}
                 if has_permission:
-                    field_dict[key]["example"] = value
+                    field_dict[key]["example"] = preprocess_data(value)
 
         # 转换为EventInfoField列表
         return [
@@ -914,7 +914,7 @@ class GetEventFieldsConfig(StrategyV2Base):
                 if key not in field_dict:
                     field_dict[key] = {"display_name": key, "example": "", "description": ""}
                 if has_permission:
-                    field_dict[key]["example"] = value
+                    field_dict[key]["example"] = preprocess_data(value)
 
         # 转换为EventInfoField列表
         return [

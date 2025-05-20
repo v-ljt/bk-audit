@@ -30,7 +30,7 @@ from django.utils import timezone
 from django.utils.translation import gettext
 from jinja2 import UndefinedError
 from rest_framework.settings import api_settings
-
+from apps.meta.utils.format import preprocess_data
 from apps.meta.models import GlobalMetaConfig
 from apps.notice.constants import RelateType
 from apps.notice.handlers import ErrorMsgHandler
@@ -107,14 +107,6 @@ class RiskHandler:
 
         return data
 
-    # 预处理 create_params，自动转换所有 list 为逗号拼接字符串
-    @staticmethod
-    def preprocess_data(data):
-        if isinstance(data, dict):
-            return {k: RiskHandler.preprocess_data(v) for k, v in data.items()}
-        elif isinstance(data, list):
-            return ", ".join(str(item) for item in data)
-        return data
     @classmethod
     def render_risk_title(cls, create_params: dict) -> Optional[str]:
         """
@@ -133,7 +125,7 @@ class RiskHandler:
             event_evidence = {}
         create_params["event_evidence"] = event_evidence
 
-        processed_params = cls.preprocess_data(create_params)
+        processed_params = preprocess_data(create_params)
 
         try:
             risk_title = Jinja2Renderer(undefined=RiskTitleUndefined).jinja_render(
