@@ -16,16 +16,17 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 import abc
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
 from django.utils.translation import gettext_lazy
 from drf_pydantic import BaseModel
 from pydantic import Field as PydanticField
-from pydantic.v1 import root_validator
+from rest_framework.fields import CharField
 
-from core.choices import TextChoices
+from core.choices import TextChoices, register_choices
 
 
+@register_choices("ToolType")
 class ToolTypeEnum(TextChoices):
     """
     工具类型
@@ -36,6 +37,7 @@ class ToolTypeEnum(TextChoices):
     BK_VISION = "bk_vision", gettext_lazy("BK Vision")
 
 
+@register_choices("DataSearchConfigType")
 class DataSearchConfigTypeEnum(TextChoices):
     """
     数据查询配置类型
@@ -45,6 +47,7 @@ class DataSearchConfigTypeEnum(TextChoices):
     SQL = "sql", gettext_lazy("SQL模式")
 
 
+@register_choices("FieldCategory")
 class FieldCategory(TextChoices):
     """
     字段类别(前端类型)
@@ -55,6 +58,16 @@ class FieldCategory(TextChoices):
     TIME_RANGE_SELECT = "time_range_select", gettext_lazy("时间范围选择器")
     TIME_SELECT = "time_select", gettext_lazy("时间选择器")
     PERSON_SELECT = "person_select", gettext_lazy("人员选择器")
+
+
+@register_choices("TargetValueType")
+class TargetValueTypeEnum(TextChoices):
+    """
+    下钻目标值类型枚举
+    """
+
+    FIXED_VALUE = "fixed_value", gettext_lazy("固定值")
+    FIELD = "field", gettext_lazy("字段")
 
 
 class DataSearchBaseField(BaseModel, abc.ABC):
@@ -91,17 +104,12 @@ class ToolDrillConfig(BaseModel):
     工具下钻配置
     """
 
-    target_field: str  # 目标字段
-    source_field: Optional[str] = None  # 来源字段
-    target_value: Optional[str] = None  # 固定值
-
-    @root_validator
-    def check_exclusive_fields(cls, values):
-        sf, tv = values.get('source_field'), values.get('target_value')
-        # 如果两个都为空，或两个都有值，都算校验失败
-        if (sf is None) == (tv is None):
-            raise ValueError('必须且只能提供 source_field 或 target_value 中的一个')
-        return values
+    target_value_type: TargetValueTypeEnum
+    target_field_type: Optional[str] = None  # 引用字段类型用于前端区分字段
+    target_value: Annotated[Optional[str], CharField(allow_blank=True, required=False, default='')] = PydanticField(
+        "", description="变量的详细描述"
+    )
+    source_field: str  # 工具变量
 
 
 class DataSearchDrillConfig(BaseModel):
@@ -130,8 +138,9 @@ class SQLDataSearchConfig(BaseModel):
     SQL模式数据查询配置 -- 当工具为数据检索且配置类型为 SQL 类型时使用
     """
 
+    sql: str = PydanticField(title="SQL语句")
     referenced_tables: List[Table]  # RT表
-    input_variable: List[SQLDataSearchInputVariable]  # 输入字段
+    input_variable: List[SQLDataSearchInputVariable]  # 输入变量
     output_fields: List[SQLDataSearchOutputField]  # 输出字段
 
 
@@ -140,5 +149,4 @@ class BkvisionConfig(BaseModel):
     BK Vision配置 -- 当工具为 BK Vision时使用
     """
 
-    space_uid: str  # BK Vision 空间 ID
     uid: str  # BK Vision 图表ID

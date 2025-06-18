@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
+from typing import Optional
 
 from django.db import models
+from django.db.models import F, OuterRef, Subquery
 from django.utils.translation import gettext_lazy
 
 from core.models import OperateRecordModel, SoftDeleteModel, UUIDField
+from core.utils.tools import unique_id
 from services.web.tool.constants import DataSearchConfigTypeEnum, ToolTypeEnum
-from services.web.vision.models import VisionPanel
+from services.web.vision.models import Scenario, VisionPanel
 
 
 class Tool(SoftDeleteModel):
@@ -27,13 +30,46 @@ class Tool(SoftDeleteModel):
         unique_together = [("uid", "version")]
         ordering = ["namespace", "-updated_at"]
 
+    @classmethod
+    def all_latest_tools(cls):
+        """
+        获取每个工具（按 uid 区分）的最新版本（version 最大）的记录集合。
+        """
+        base_qs = cls.objects.filter(is_deleted=False)
+        subquery = base_qs.filter(uid=OuterRef('uid')).order_by('-version').values('version')[:1]
+        return base_qs.annotate(max_version=Subquery(subquery)).filter(version=F('max_version'))
+
+    @classmethod
+    def last_version_tool(cls, uid: str) -> Optional["Tool"]:
+        """
+        获取指定 UID 的最新版本 Tool
+        """
+        return cls.objects.filter(uid=uid).order_by("-version").first()
+
+    @classmethod
+    def fetch_tool_vision_panel(cls, vision_id: str, handler: str) -> VisionPanel:
+        panel, _ = VisionPanel.objects.get_or_create(
+            vision_id=vision_id,
+            scenario=Scenario.TOOL.value,
+            handler=handler,
+            defaults={
+                "id": unique_id(),
+            },
+        )
+        return panel
+
+    @classmethod
+    def delete_by_uid(cls, uid: str):
+        Tool.objects.filter(uid=uid, is_deleted=False).delete()
+        ToolTag.objects.filter(tool_uid=uid).delete()
+
 
 class DataSearchToolConfig(OperateRecordModel):
     """
     数据检索工具配置
     """
 
-    tool = models.ForeignKey(Tool, db_constraint=False, on_delete=models.CASCADE)
+    tool = models.OneToOneField(Tool, on_delete=models.CASCADE, related_name="data_search_config")
     data_search_config_type = models.CharField(
         gettext_lazy("数据检索类型"), choices=DataSearchConfigTypeEnum.choices, max_length=32
     )
@@ -44,13 +80,13 @@ class DataSearchToolConfig(OperateRecordModel):
         verbose_name_plural = verbose_name
 
 
-class BkvisionToolConfig(OperateRecordModel):
+class BkVisionToolConfig(OperateRecordModel):
     """
-    Bkvision工具配置
+    BkVision工具配置
     """
 
-    tool = models.ForeignKey(Tool, db_constraint=False, on_delete=models.CASCADE)
-    panel = models.ForeignKey(VisionPanel, db_constraint=False, on_delete=models.DO_NOTHING)
+    tool = models.OneToOneField(Tool, on_delete=models.CASCADE, related_name="bkvision_config")
+    panel = models.ForeignKey(VisionPanel, on_delete=models.DO_NOTHING)
 
     class Meta:
         verbose_name = gettext_lazy("Bkvision Tool Config")
