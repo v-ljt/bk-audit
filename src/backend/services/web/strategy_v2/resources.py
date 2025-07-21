@@ -44,6 +44,7 @@ from rest_framework.settings import api_settings
 from apps.audit.resources import AuditMixinResource
 from apps.feature.constants import FeatureTypeChoices
 from apps.feature.handlers import FeatureHandler
+from apps.meta.constants import NO_TAG_ID, NO_TAG_NAME
 from apps.meta.models import DataMap, Tag
 from apps.meta.utils.fields import (
     ACTION_ID,
@@ -80,8 +81,6 @@ from services.web.strategy_v2.constants import (
     HAS_UPDATE_TAG_ID,
     HAS_UPDATE_TAG_NAME,
     LOCAL_UPDATE_FIELDS,
-    NO_TAG_ID,
-    NO_TAG_NAME,
     STRATEGY_RISK_DEFAULT_INTERVAL,
     EventInfoField,
     LinkTableJoinType,
@@ -95,6 +94,7 @@ from services.web.strategy_v2.constants import (
     RuleAuditSourceType,
     RuleAuditWhereConnector,
     StrategyAlgorithmOperator,
+    StrategyFieldSourceEnum,
     StrategyOperator,
     StrategyStatusChoices,
     StrategyType,
@@ -118,6 +118,7 @@ from services.web.strategy_v2.models import (
     Strategy,
     StrategyAuditInstance,
     StrategyTag,
+    StrategyTool,
 )
 from services.web.strategy_v2.serializers import (
     BulkGetRTFieldsRequestSerializer,
@@ -180,6 +181,38 @@ class StrategyV2Base(AuditMixinResource, abc.ABC):
             return
         tags = resource.meta.save_tags([{"tag_name": t} for t in tag_names])
         StrategyTag.objects.bulk_create([StrategyTag(strategy_id=strategy_id, tag_id=t["tag_id"]) for t in tags])
+
+    def _save_strategy_tools(self, strategy: Strategy, validated_request_data: dict) -> None:
+        StrategyTool.objects.filter(strategy=strategy).delete()
+
+        tools_to_create = []
+        field_config_map = [
+            (StrategyFieldSourceEnum.BASIC.value, "event_basic_field_configs"),
+            (StrategyFieldSourceEnum.DATA.value, "event_data_field_configs"),
+            (StrategyFieldSourceEnum.EVIDENCE.value, "event_evidence_field_configs"),
+        ]
+
+        for field_source, config_key in field_config_map:
+            for field_cfg in validated_request_data.get(config_key, []):
+                drill_config = field_cfg.get("drill_config") or {}
+                tool = drill_config.get("tool") or {}
+
+                # 如果未配置 drill_config 或 tool.uid 为空，就跳过
+                if not tool.get("uid"):
+                    continue
+
+                tools_to_create.append(
+                    StrategyTool(
+                        strategy=strategy,
+                        field_name=field_cfg.get("field_name"),
+                        tool_uid=tool["uid"],
+                        tool_version=tool.get("version"),
+                        field_source=field_source,
+                    )
+                )
+
+        if tools_to_create:
+            StrategyTool.objects.bulk_create(tools_to_create)
 
     @staticmethod
     def get_base_control_type(strategy_type: str) -> Optional[str]:
@@ -246,6 +279,7 @@ class CreateStrategy(StrategyV2Base):
             strategy: Strategy = Strategy.objects.create(**validated_request_data)
             # save strategy tag
             self._save_tags(strategy_id=strategy.strategy_id, tag_names=tag_names)
+            self._save_strategy_tools(strategy, validated_request_data)
             if strategy_type == StrategyType.RULE:
                 strategy.sql = self.build_rule_audit_sql(strategy)
                 strategy.save(update_fields=["sql"])
@@ -328,6 +362,7 @@ class UpdateStrategy(StrategyV2Base):
         strategy.save(update_fields=validated_request_data.keys())
         # save strategy tag
         self._save_tags(strategy_id=strategy.strategy_id, tag_names=tag_names)
+        self._save_strategy_tools(strategy, validated_request_data)
         # update rule audit sql
         if need_update_remote and strategy.strategy_type == StrategyType.RULE:
             strategy.sql = self.build_rule_audit_sql(strategy)
@@ -358,6 +393,8 @@ class DeleteStrategy(StrategyV2Base):
         strategy = get_object_or_404(Strategy, strategy_id=validated_request_data["strategy_id"])
         # delete tags
         StrategyTag.objects.filter(strategy_id=validated_request_data["strategy_id"]).delete()
+        StrategyTool.objects.filter(strategy=strategy).delete()
+
         # delete
         try:
             call_controller(
@@ -395,9 +432,13 @@ class ListStrategy(StrategyV2Base):
             .values('count')
         )
 
-        queryset = Strategy.objects.filter(
-            namespace=validated_request_data["namespace"],
-        ).annotate(risk_count=Subquery(risk_count_subquery, output_field=IntegerField()))
+        queryset = (
+            Strategy.objects.filter(
+                namespace=validated_request_data["namespace"],
+            )
+            .annotate(risk_count=Subquery(risk_count_subquery, output_field=IntegerField()))
+            .prefetch_related("tools")
+        )
         # 排序
         queryset = queryset.order_by(order_field)
 
@@ -1192,9 +1233,7 @@ class DeleteLinkTable(LinkTableBase):
 class ListLinkTable(LinkTableBase):
     name = gettext_lazy("查询联表列表")
     RequestSerializer = ListLinkTableRequestSerializer
-    ResponseSerializer = ListLinkTableResponseSerializer
     audit_action = ActionEnum.LIST_LINK_TABLE
-    many_response_data = True
     bind_request = True
 
     def perform_request(self, validated_request_data):
@@ -1247,7 +1286,7 @@ class ListLinkTable(LinkTableBase):
                 strategy_version_map.get(link_table.uid, link_table.version) < link_table.version,
             )
         # 响应
-        return link_tables
+        return page.get_paginated_response(data=ListLinkTableResponseSerializer(instance=link_tables, many=True).data)
 
 
 class ListLinkTableAll(LinkTableBase):
