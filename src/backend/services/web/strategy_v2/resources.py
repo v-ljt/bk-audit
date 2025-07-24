@@ -1192,9 +1192,7 @@ class DeleteLinkTable(LinkTableBase):
 class ListLinkTable(LinkTableBase):
     name = gettext_lazy("查询联表列表")
     RequestSerializer = ListLinkTableRequestSerializer
-    ResponseSerializer = ListLinkTableResponseSerializer
     audit_action = ActionEnum.LIST_LINK_TABLE
-    many_response_data = True
     bind_request = True
 
     def perform_request(self, validated_request_data):
@@ -1247,7 +1245,7 @@ class ListLinkTable(LinkTableBase):
                 strategy_version_map.get(link_table.uid, link_table.version) < link_table.version,
             )
         # 响应
-        return link_tables
+        return page.get_paginated_response(data=ListLinkTableResponseSerializer(instance=link_tables, many=True).data)
 
 
 class ListLinkTableAll(LinkTableBase):

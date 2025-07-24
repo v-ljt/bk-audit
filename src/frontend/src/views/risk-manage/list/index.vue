@@ -47,6 +47,7 @@
     useI18n,
   } from 'vue-i18n';
   import {
+    onBeforeRouteLeave,
     useRouter,
   } from 'vue-router';
 
@@ -124,10 +125,16 @@
             riskId: data.risk_id,
           },
         };
-        return <router-link to={to} target='_blank'>
+        return <router-link to={to}>
           <Tooltips data={data.risk_id} />
         </router-link>;
       },
+    },
+    {
+      label: () => t('风险标题'),
+      field: () => 'title',
+      minWidth: 320,
+      render: ({ data }: { data: RiskManageModel }) => <Tooltips data={data.title} />,
     },
     {
       label: () => t('风险描述'),
@@ -156,7 +163,7 @@
       label: () => t('责任人'),
       field: () => 'operator',
       minWidth: 148,
-      render: ({ data }: { data: RiskManageModel }) => <EditTag data={data.operator} />,
+      render: ({ data }: { data: RiskManageModel }) => <EditTag data={data.operator || []} />,
     },
     {
       label: () => t('处理状态'),
@@ -232,7 +239,7 @@
       },
     },
     {
-      label: () => t('通知人员'),
+      label: () => t('关注人'),
       field: () => 'notice_users',
       minWidth: 160,
       render: ({ data }: { data: RiskManageModel }) => <EditTag data={data.notice_users} />,
@@ -318,18 +325,46 @@
     }, [] as Array<{
       label: string, field: string, disabled: boolean,
     }>),
-    checked: ['risk_id', 'event_content', 'tags', 'operator', 'status', 'current_operator', 'risk_label', 'event_time'],
+    checked: ['risk_id', 'event_content', 'tags', 'operator', 'status', 'current_operator', 'risk_label', 'event_time', 'title', 'notice_users', 'strategy_id'],
     showLineHeight: false,
+    trigger: 'manual' as const,  // 添加 as const 类型断言
   });
   const settings = computed(() => {
+    const defaultSettings = initSettings(); // 获取最新的默认配置
     const jsonStr = localStorage.getItem('audit-all-risk-list-setting');
-    if (jsonStr) {
-      const jsonSetting = JSON.parse(jsonStr);
-      jsonSetting.showLineHeight = false;
-      return jsonSetting;
+
+    if (!jsonStr) return defaultSettings;
+
+    try {
+      const savedSettings = JSON.parse(jsonStr);
+
+      // 字段合并：以默认配置为基础，合并用户保存的字段状态
+      const mergedFields = defaultSettings.fields.map((defaultField) => {
+        const savedField = savedSettings.fields?.find((f: any) => f.field === defaultField.field);
+        // 保留新字段配置，仅继承用户设置的disabled状态
+        return savedField
+          ? { ...defaultField, disabled: savedField.disabled }
+          : defaultField;
+      });
+
+      // 选中的字段合并：保留用户选择 + 新增的默认选中字段
+      const savedCheckedSet = new Set(savedSettings.checked || []);
+      const newDefaultChecked = defaultSettings.checked
+        .filter(field => !savedCheckedSet.has(field)); // 找出新增的默认选中字段
+      const mergedChecked = [...(savedSettings.checked || []), ...newDefaultChecked]
+        .filter(field => mergedFields.some(f => f.field === field)); // 过滤无效字段
+
+      return {
+        ...defaultSettings,       // 保留最新默认配置的其他属性
+        fields: mergedFields,     // 合并后的字段配置
+        checked: mergedChecked,   // 合并后的选中字段
+        showLineHeight: false,    // 强制重置行高设置
+        trigger: 'manual' as const,  // 添加 as const 类型断言
+      };
+    } catch (e) {
+      console.error('本地设置解析失败，使用默认配置', e);
+      return defaultSettings;
     }
-    const setting = initSettings();
-    return setting;
   });
 
 
@@ -469,6 +504,8 @@
       risk_label: '',
       event_content: '',
       risk_level: '',
+      title: '',
+      notice_users: '',
     };
     listRef.value.fetchData({
       ...params,
@@ -478,6 +515,19 @@
 
   onUnmounted(() => {
     clearTimeout(timeout);
+  });
+
+  onBeforeRouteLeave((to, from, next) => {
+    if (to.name === 'riskManageDetail') {
+      const params = getSearchParams();
+      // 保存当前查询参数到目标路由的 query 中
+      // eslint-disable-next-line no-param-reassign
+      to.query = {
+        ...to.query,
+        ...params,
+      };
+    }
+    next();
   });
 </script>
 <style lang='postcss'>
