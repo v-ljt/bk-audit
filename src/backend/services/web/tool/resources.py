@@ -468,7 +468,7 @@ class UpdateTool(ToolBase):
     RequestSerializer = ToolUpdateRequestSerializer
     ResponseSerializer = ToolResponseSerializer
 
-    def create_tool_new_version(self, old_tool: Tool, validated_request_data: dict):
+    def create_tool_new_version(self, old_tool: Tool, validated_request_data: dict, tag_names: List[str]):
         """
         创建工具新版本
         """
@@ -483,6 +483,8 @@ class UpdateTool(ToolBase):
             "version": old_tool.version + 1,
             "config": new_config,
         }
+        # 透传标签到新版本创建流程，避免丢失标签
+        new_tool_data["tags"] = tag_names
         change_permission_owner = old_tool.has_change_permission_owner(new_config)
         new_tool_data["permission_owner"] = (
             get_request_username() if change_permission_owner else old_tool.get_permission_owner()
@@ -509,7 +511,10 @@ class UpdateTool(ToolBase):
             raise ToolDoesNotExist()
         # 如果配置有变更则创建新版本
         if validated_request_data.get("config") and validated_request_data.get("config") != tool.config:
-            return self.create_tool_new_version(old_tool=tool, validated_request_data=validated_request_data)
+            # 配置变更时创建新版本，同时同步传入的标签
+            return self.create_tool_new_version(
+                old_tool=tool, validated_request_data=validated_request_data, tag_names=tag_names
+            )
         # 配置未变更则更新原版本
         for key, value in validated_request_data.items():
             setattr(tool, key, value)
