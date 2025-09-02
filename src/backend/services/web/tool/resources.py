@@ -124,7 +124,9 @@ class ListToolTags(ToolBase):
         authed_tool_filter = permission.authed_tool_filter  # 获取权限过滤条件
 
         tag_count = list(
-            ToolTag.objects.filter(tool_uid__in=Tool.all_latest_tools().filter(authed_tool_filter))
+            ToolTag.objects.filter(
+                tool_uid__in=Tool.all_latest_tools().filter(authed_tool_filter).values_list("uid", flat=True)
+            )
             .values("tag_id")
             .annotate(tool_count=Count("tag_id"))
             .order_by()
