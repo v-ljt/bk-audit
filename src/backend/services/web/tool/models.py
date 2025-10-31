@@ -3,7 +3,6 @@ from typing import Optional
 
 from django.db import models
 from django.db.models import F, OuterRef, QuerySet, Subquery
-from django.utils import timezone
 from django.utils.translation import gettext_lazy
 
 from core.models import OperateRecordModel, SoftDeleteModel, UUIDField
@@ -141,9 +140,7 @@ class BkVisionToolConfig(OperateRecordModel):
 
     tool = models.OneToOneField(Tool, on_delete=models.CASCADE, related_name="bkvision_config")
     panel = models.ForeignKey(VisionPanel, on_delete=models.DO_NOTHING, related_name="tools")
-    updated_time = models.DateTimeField(
-        gettext_lazy("bkvision更新时间"), blank=True, null=True, db_index=True, default=timezone.now
-    )
+    updated_time = models.DateTimeField(gettext_lazy("bkvision更新时间"), blank=True, null=True, db_index=True)
 
     class Meta:
         verbose_name = gettext_lazy("Bkvision Tool Config")

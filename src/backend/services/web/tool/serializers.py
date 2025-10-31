@@ -16,7 +16,6 @@ to the current version of the project delivered to anyone in the future.
 """
 from typing import Annotated, Optional
 
-import pytz
 from django.utils.translation import gettext_lazy
 from pydantic import Field as PydanticField
 from rest_framework import serializers
@@ -177,19 +176,11 @@ class ToolRetrieveResponseSerializer(serializers.ModelSerializer):
     tags = serializers.ListField(child=serializers.CharField(), label=gettext_lazy("标签列表"))
     data_search_config_type = serializers.SerializerMethodField()
     permission_owner = serializers.SerializerMethodField()
-    updated_time = serializers.SerializerMethodField()
+    updated_time = serializers.DateTimeField(required=False, label="更新时间", format="%Y-%m-%d %H:%M:%S", allow_null=True)
 
     def get_data_search_config_type(self, obj):
         if hasattr(obj, "data_search_config") and obj.data_search_config:
             return obj.data_search_config.data_search_config_type
-        return None
-
-    def get_updated_time(self, obj):
-        if hasattr(obj, "bkvision_config") and obj.bkvision_config:
-            if obj.bkvision_config.updated_time:
-                utc_time = obj.bkvision_config.updated_time.replace(tzinfo=pytz.utc)
-                local_time = utc_time.astimezone(pytz.timezone('Asia/Shanghai'))
-                return local_time.strftime("%Y-%m-%d %H:%M:%S")
         return None
 
     def get_permission_owner(self, obj: Tool):
